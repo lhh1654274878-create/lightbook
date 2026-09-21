@@ -1,6 +1,7 @@
 /* ============================================================
    轻记账 LightBook · 统计图表 (ECharts)
-   由 app.js 中的 renderTrend / renderCatChart 调用
+   优化：实例缓存（不销毁重建）、Canvas 渲染器（更流畅）、
+        懒初始化（首次进入统计页才创建）、resize 节流
    ============================================================ */
 (function () {
   'use strict';
@@ -15,15 +16,19 @@
 
   var charts = {};
 
+  /* 实例缓存：同一容器只 init 一次，后续 setOption 更新（避免 dispose 重建开销） */
   function getChart(id) {
     var el = document.getElementById(id);
     if (!el) return null;
-    if (charts[id]) {
-      charts[id].dispose();
-    }
-    var c = echarts.init(el, null, { renderer: 'svg' });
+    if (charts[id]) return charts[id];
+    var c = echarts.init(el, null, { renderer: 'canvas' });
     charts[id] = c;
-    window.addEventListener('resize', function () { c.resize(); });
+    /* resize 节流（150ms），避免快速切换时反复触发 */
+    var t = null;
+    window.addEventListener('resize', function () {
+      if (t) return;
+      t = setTimeout(function () { t = null; c.resize(); }, 150);
+    });
     return c;
   }
 
@@ -33,7 +38,6 @@
     if (!c) return;
     var color = type === 'income' ? accent2 : accent;
     var base = type === 'income' ? '#e8f8ec' : 'rgba(0,122,255,0.14)';
-    var isCurrent = data[data.length - 1];
     c.setOption({
       animation: false,
       tooltip: {
@@ -80,6 +84,77 @@
     }, true);
   };
 
+  /* 本月每日支出柱状图 */
+  window.renderDailyChart = function () {
+    var c = getChart('chart-daily');
+    if (!c) return;
+    var ym = window.__LB_STATE ? window.__LB_STATE.month : { y: new Date().getFullYear(), m: new Date().getMonth() + 1 };
+    var p = ym.y + '-' + (ym.m < 10 ? '0' + ym.m : ym.m);
+    var bills = window.__LB_BILLS ? window.__LB_BILLS.filter(function (b) { return b.type === 'expense' && b.date.indexOf(p) === 0; }) : [];
+    var dim = new Date(ym.y, ym.m, 0).getDate();
+    var byDay = new Array(dim + 1).fill(0);
+    bills.forEach(function (b) {
+      var day = parseInt(b.date.slice(8, 10), 10);
+      if (day >= 1 && day <= dim) byDay[day] += b.amount;
+    });
+    var days = [];
+    for (var d = 1; d <= dim; d++) days.push(d);
+    var today = new Date().getDate();
+    var todayIdx = ym.y === new Date().getFullYear() && ym.m === new Date().getMonth() + 1 ? today : -1;
+    var maxVal = Math.max.apply(null, byDay.slice(1));
+    if (!maxVal) maxVal = 1;
+
+    c.setOption({
+      animation: false,
+      grid: { left: 8, right: 8, top: 24, bottom: 4, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        appendToBody: true,
+        backgroundColor: 'rgba(28,28,30,.92)',
+        borderWidth: 0,
+        textStyle: { color: '#fff', fontSize: 12 },
+        formatter: function (ps) {
+          var p0 = ps[0];
+          return ym.m + '月' + p0.name + '日<br>支出: ¥' + Number(p0.value).toFixed(2);
+        }
+      },
+      xAxis: {
+        type: 'category',
+        data: days.map(function (d) { return String(d); }),
+        axisLine: { lineStyle: { color: rule } },
+        axisTick: { show: false },
+        axisLabel: {
+          color: muted, fontSize: 10,
+          formatter: function (v) {
+            var n = parseInt(v, 10);
+            return (n % 5 === 1 || n === 1 || n === dim || n === todayIdx) ? v : '';
+          }
+        }
+      },
+      yAxis: {
+        type: 'value',
+        splitLine: { lineStyle: { color: rule, type: 'dashed' } },
+        axisLabel: {
+          color: muted, fontSize: 10,
+          formatter: function (v) { return v >= 10000 ? (v / 10000).toFixed(1) + 'w' : v; }
+        }
+      },
+      series: [{
+        type: 'bar',
+        data: days.map(function (d) {
+          return {
+            value: Math.round(byDay[d] * 100) / 100,
+            itemStyle: {
+              borderRadius: [3, 3, 0, 0],
+              color: d === todayIdx ? accent2 : (byDay[d] > 0 ? accent : 'rgba(0,122,255,0.08)')
+            }
+          };
+        }),
+        barCategoryGap: '20%'
+      }]
+    }, true);
+  };
+
   /* 分类占比环形图 */
   window.renderCatChart = function (type) {
     var c = getChart('chart-cat');
@@ -93,6 +168,12 @@
     arr.sort(function (a, b) { return b.val - a.val; });
     var total = arr.reduce(function (s, a) { return s + a.val; }, 0);
 
+    function findCat(id) {
+      var cats = window.__LB_CATS || [];
+      for (var i = 0; i < cats.length; i++) if (cats[i].id === id) return cats[i];
+      return null;
+    }
+
     if (!arr.length) {
       c.setOption({
         animation: false,
@@ -105,10 +186,7 @@
     }
 
     var colors = arr.map(function (a) {
-      var cat = null;
-      if (window.__LB_CATS) {
-        for (var i = 0; i < window.__LB_CATS.length; i++) if (window.__LB_CATS[i].id === a.id) cat = window.__LB_CATS[i];
-      }
+      var cat = findCat(a.id);
       return cat ? cat.color : '#8E8E93';
     });
 
@@ -146,10 +224,7 @@
         },
         labelLine: { length: 8, length2: 6, lineStyle: { color: rule } },
         data: arr.map(function (a) {
-          var cat = null;
-          if (window.__LB_CATS) {
-            for (var i = 0; i < window.__LB_CATS.length; i++) if (window.__LB_CATS[i].id === a.id) cat = window.__LB_CATS[i];
-          }
+          var cat = findCat(a.id);
           return { name: cat ? cat.name : '未分类', value: a.val };
         })
       }]
