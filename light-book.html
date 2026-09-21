@@ -124,6 +124,74 @@
 
     /* ==== 快捷面板 ==== */
     .quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+
+    /* ==== 预算卡 ==== */
+    .budget-card { margin-top: 12px; background: var(--bg2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 13px 14px; }
+    .budget-card .budget-empty { font-size: .88rem; font-weight: 600; display: flex; align-items: center; justify-content: space-between; cursor: pointer; color: var(--ink); }
+    .budget-card .budget-empty span { color: var(--muted); font-size: .8rem; }
+    .budget-head { display: flex; align-items: center; justify-content: space-between; font-size: .78rem; color: var(--muted); }
+    .budget-head b { font-family: var(--num); font-size: .86rem; }
+    .budget-track { height: 8px; border-radius: 4px; background: var(--rule); margin-top: 8px; overflow: hidden; }
+    .budget-track i { display: block; height: 100%; border-radius: 4px; transition: width .35s ease, background .35s ease; min-width: 2px; }
+    .budget-foot { display: flex; justify-content: space-between; font-size: .7rem; color: var(--muted); margin-top: 6px; font-family: var(--num); }
+
+    /* ==== 搜索框 ==== */
+    .search-box {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+      background: var(--bg2); border: 1px solid var(--rule); border-radius: 12px; padding: 8px 12px;
+      box-shadow: var(--shadow);
+    }
+
+    /* ==== 今日支出汇总条 ==== */
+    .today-summary {
+      display: flex; align-items: center; justify-content: space-between;
+      background: linear-gradient(135deg, rgba(0,122,255,.08), rgba(88,86,214,.08));
+      border: 1px solid var(--rule); border-radius: 12px; padding: 9px 14px; margin-bottom: 10px;
+    }
+    .today-summary .ts-label { font-size: .76rem; color: var(--muted); }
+    .today-summary .ts-amt { font-family: var(--num); font-weight: 700; font-size: 1.05rem; color: var(--accent); }
+    .today-summary .ts-count { font-size: .72rem; color: var(--muted); }
+
+    /* ==== 每日支出图表（横向滚动） ==== */
+    .chart-daily { width: 100%; overflow-x: auto; }
+    .chart-daily canvas, .chart-daily div { min-width: 320px; }
+    .search-box .search-ico { font-size: .9rem; }
+    .search-box input { flex: 1; border: 0; outline: 0; background: transparent; font-size: .88rem; font-family: var(--font); color: var(--ink); }
+    .search-box .search-clear { border: 0; background: rgba(0,0,0,.06); width: 22px; height: 22px; border-radius: 50%; font-size: .62rem; color: var(--muted); cursor: pointer; display: none; }
+    .search-box.has-q .search-clear { display: block; }
+
+    /* ==== 预算快捷金额 ==== */
+    .budget-quick { display: flex; gap: 8px; margin-top: 12px; }
+    .budget-quick button {
+      flex: 1; border: 1px solid var(--rule); background: var(--bg); border-radius: 10px;
+      padding: 9px 0; font-size: .8rem; font-weight: 600; color: var(--ink); cursor: pointer;
+      font-family: var(--num);
+    }
+    .budget-quick button:active { background: rgba(0,122,255,.08); border-color: var(--accent); }
+
+    /* ==== 快捷金额按钮 ==== */
+    .amt-quick { display: flex; gap: 6px; margin-top: 8px; }
+    .amt-quick button {
+      flex: 1; border: 1px solid var(--rule); background: var(--bg); border-radius: 10px;
+      padding: 7px 0; font-size: .78rem; font-weight: 700; color: var(--ink); cursor: pointer;
+      font-family: var(--num);
+    }
+    .amt-quick button:active { background: rgba(0,122,255,.08); border-color: var(--accent); color: var(--accent); }
+
+    /* ==== 分类预算 ==== */
+    .cat-budget-list { max-height: 200px; overflow-y: auto; margin-bottom: 10px; }
+    .cat-budget-row {
+      display: flex; align-items: center; gap: 8px; padding: 6px 0;
+      border-bottom: 1px solid var(--rule);
+    }
+    .cat-budget-row:last-child { border-bottom: 0; }
+    .cat-budget-row .cb-name { flex: 1; font-size: .8rem; font-weight: 600; display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .cat-budget-row .cb-name .cb-ico { width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .72rem; flex: none; }
+    .cat-budget-row input {
+      width: 76px; border: 1px solid var(--rule); border-radius: 8px; padding: 5px 8px;
+      font-size: .78rem; font-family: var(--num); background: var(--bg); color: var(--ink); outline: 0; text-align: right;
+    }
+    .cat-budget-row input:focus { border-color: var(--accent); }
     .quick-btn {
       background: var(--bg2); border: 1px solid var(--rule); border-radius: var(--radius);
       padding: 10px 4px; text-align: center; cursor: pointer;
@@ -162,6 +230,11 @@
     }
     .ap-btn:active { background: rgba(0,122,255,.08); border-color: var(--accent); }
     .ap-btn.listening { background: rgba(255,59,48,.12); border-color: var(--danger); color: var(--danger); animation: pulse 1.2s infinite; }
+    .ap-btn.primary {
+      background: var(--accent); border-color: var(--accent); color: #fff;
+      padding: 8px 12px; font-size: .78rem;
+    }
+    .ap-btn.primary:active { background: #005ecb; border-color: #005ecb; }
     .ap-desc { font-size: .72rem; color: var(--muted); margin-top: 8px; line-height: 1.6; }
     .detect-card {
       display: none; margin-top: 10px; border-radius: 12px; padding: 12px;
@@ -182,10 +255,25 @@
     .detect-card .dc-btn.no { background: rgba(0,0,0,.06); color: var(--muted); }
     .detect-card.dc-empty { background: var(--bg); border-color: var(--rule); }
     .detect-card.dc-empty .dc-detail { color: var(--muted); }
+    .detect-card.flash { animation: flashCard .5s ease 3; border-color: var(--accent); }
+    @keyframes flashCard { 0%,100% { box-shadow: 0 0 0 0 rgba(0,122,255,0); } 50% { box-shadow: 0 0 0 6px rgba(0,122,255,.25); } }
+    /* ==== 连续语音批量列表 ==== */
+    .dc-batch { margin-top: 10px; }
+    .dc-batch-item {
+      display: flex; align-items: center; gap: 8px; padding: 8px 0;
+      border-bottom: 1px solid var(--rule); font-size: .8rem;
+    }
+    .dc-batch-item:last-child { border-bottom: 0; }
+    .dc-batch-item .bi-amt { font-family: var(--num); font-weight: 700; }
+    .dc-batch-item .bi-info { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: .72rem; }
+    .dc-batch-item .bi-x { border: 0; background: rgba(0,0,0,.06); width: 22px; height: 22px; border-radius: 50%; color: var(--muted); font-size: .7rem; cursor: pointer; }
+    .dc-batch-actions { display: flex; gap: 8px; margin-top: 10px; }
+    .dc-batch-actions .dc-btn { flex: 1; }
+    .dc-batch-tip { font-size: .7rem; color: var(--muted); margin-top: 8px; }
     .dc-input {
       width: 100%; margin-top: 8px; border: 1px solid var(--rule); border-radius: 10px;
       padding: 10px 12px; font-size: .85rem; font-family: var(--font);
-      background: var(--bg2); color: var(--ink); outline: 0;
+      background: var(--bg2); color: var(--ink); outline: 0; min-height: 92px; resize: vertical;
     }
     .dc-input:focus { border-color: var(--accent); }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
@@ -252,6 +340,9 @@
       transition: width .18s ease; border-radius: 0 var(--radius) var(--radius) 0;
     }
     .bill-item.swiping .b-del { width: 68px; }
+    /* 长列表虚拟化（渐进增强：不支持的浏览器自动忽略） */
+    .bill-item { content-visibility: auto; contain-intrinsic-size: auto 66px; }
+    .bill-item:first-child { content-visibility: visible; }
     .empty {
       text-align: center; padding: 44px 16px; color: var(--muted); font-size: .86rem;
     }
@@ -264,6 +355,51 @@
       font-size: .84rem; font-weight: 600; color: var(--muted); cursor: pointer;
     }
     .stat-tabs button.on { background: var(--bg2); color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+    .stat-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    .stat-summary .ss-item {
+      background: var(--bg2); border-radius: 12px; box-shadow: var(--shadow);
+      padding: 10px 8px; text-align: center;
+    }
+    .stat-summary .ss-item .t { font-size: .68rem; color: var(--muted); }
+    .stat-summary .ss-item .v { font-family: var(--num); font-size: 1rem; font-weight: 700; margin-top: 3px; }
+    /* ==== 收支日历 ==== */
+    .cal-wrap { user-select: none; }
+    .cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .cal-title { font-size: .9rem; font-weight: 700; }
+    .cal-nav {
+      width: 30px; height: 30px; border-radius: 50%; border: 1px solid var(--rule);
+      background: var(--bg); color: var(--muted); font-size: 1rem; cursor: pointer; line-height: 1;
+    }
+    .cal-nav:active { background: rgba(0,122,255,.08); }
+    .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+    .cal-dow { text-align: center; font-size: .66rem; color: var(--muted); padding: 4px 0; }
+    .cal-cell {
+      min-height: 44px; border-radius: 9px; background: var(--bg); border: 1px solid transparent;
+      padding: 3px 2px; text-align: center; cursor: pointer; position: relative;
+    }
+    .cal-cell.other { opacity: .35; }
+    .cal-cell.has-bill { background: var(--bg2); border-color: var(--rule); }
+    .cal-cell.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+    .cal-cell.sel { background: rgba(0,122,255,.12); border-color: var(--accent); }
+    .cal-cell .c-d { font-size: .78rem; font-weight: 600; line-height: 1.3; }
+    .cal-cell.today .c-d { color: var(--accent); }
+    .cal-cell .c-e { font-family: var(--num); font-size: .6rem; color: var(--accent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cal-cell .c-i { font-family: var(--num); font-size: .6rem; color: var(--accent2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cal-legend { display: flex; gap: 12px; margin-top: 8px; font-size: .66rem; color: var(--muted); }
+    .cal-legend .lg-exp { color: var(--accent); }
+    .cal-legend .lg-inc { color: var(--accent2); }
+    .cal-legend .lg-today { color: var(--accent); font-weight: 700; }
+    .cal-day-detail { margin-top: 8px; border-top: 1px dashed var(--rule); padding-top: 8px; }
+    .cal-day-detail .cd-title { font-size: .76rem; font-weight: 700; margin-bottom: 4px; }
+    /* ==== 本周消费报告 ==== */
+    .week-report { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .wr-item { background: var(--bg); border-radius: 10px; padding: 9px 6px; text-align: center; }
+    .wr-item .t { font-size: .66rem; color: var(--muted); }
+    .wr-item .v { font-family: var(--num); font-size: .92rem; font-weight: 700; margin-top: 3px; }
+    .wr-item .s { font-size: .62rem; margin-top: 2px; }
+    .wr-item .s.up { color: var(--danger); }
+    .wr-item .s.down { color: var(--accent2); }
+    .wr-item .s.flat { color: var(--muted); }
     .chart-card { background: var(--bg2); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px; margin-top: 12px; }
     .chart-card h3 { font-size: .84rem; font-weight: 700; margin-bottom: 8px; }
     .chart-box { width: 100%; height: 240px; }
@@ -510,18 +646,27 @@
       </div>
     </div>
 
+    <div class="budget-card" id="budget-bar"></div>
+
     <div class="quick-grid" id="quick-grid"></div>
 
-    <!-- 自动检测面板：剪贴板检测 + 语音记账 -->
+    <!-- 快速录入面板：一键粘贴 + 语音记账 -->
     <div class="auto-panel">
       <div class="auto-panel-head">
         <div class="auto-panel-title"><span class="ap-bolt">⚡</span>自动识别 · 免输入</div>
         <div class="auto-panel-actions">
-          <button class="ap-btn" id="btn-detect-clip"><span>📋</span>检测剪贴板</button>
+          <button class="ap-btn primary" id="btn-detect-clip"><span>📋</span>一键记账</button>
           <button class="ap-btn" id="btn-voice-add"><span>🎤</span>语音记账</button>
         </div>
       </div>
-      <div class="ap-desc">复制支付通知文本后点「检测剪贴板」，或直接语音说出「美团 25 元」，自动识别并记录</div>
+      <div class="auto-toggle" id="auto-toggle">
+        <div class="at-left">
+          <div class="at-txt">自动记账已关闭</div>
+          <div class="at-sub">先复制支付通知，再一键确认更可靠</div>
+        </div>
+        <div class="at-sw" id="auto-sw">OFF</div>
+      </div>
+      <div class="ap-desc">说「美团25元」「坐地铁4块」「收到工资5000」，自动填好账单；也可复制支付通知后点「一键记账」</div>
       <div class="detect-card" id="detect-card"></div>
     </div>
 
@@ -538,6 +683,12 @@
       <h2>账单明细</h2>
       <button id="btn-show-all">查看全部 ›</button>
     </div>
+    <div class="today-summary" id="today-summary"></div>
+    <div class="search-box" id="search-box">
+      <span class="search-ico">🔍</span>
+      <input type="text" id="search-input" placeholder="搜索商户 / 分类…" autocomplete="off">
+      <button class="search-clear" id="search-clear">✕</button>
+    </div>
     <div id="bill-area"></div>
   </main>
 
@@ -547,9 +698,31 @@
       <button data-r="expense" class="on">支出</button>
       <button data-r="income">收入</button>
     </div>
+    <div class="stat-summary" id="stat-summary"></div>
+    <div class="chart-card" id="week-report-card">
+      <h3>本周消费报告</h3>
+      <div id="week-report"></div>
+    </div>
+    <div class="chart-card">
+      <h3>收支日历</h3>
+      <div class="cal-wrap">
+        <div class="cal-head">
+          <button class="cal-nav" id="cal-prev">‹</button>
+          <div class="cal-title" id="cal-title"></div>
+          <button class="cal-nav" id="cal-next">›</button>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+        <div class="cal-legend"><span class="lg-exp">■ 支出</span><span class="lg-inc">■ 收入</span><span class="lg-today">■ 今天</span></div>
+      </div>
+      <div class="cal-day-detail" id="cal-day-detail"></div>
+    </div>
     <div class="chart-card">
       <h3>近 6 个月趋势</h3>
       <div class="chart-box" id="chart-trend"></div>
+    </div>
+    <div class="chart-card">
+      <h3>本月每日支出</h3>
+      <div class="chart-box chart-daily" id="chart-daily"></div>
     </div>
     <div class="chart-card">
       <h3>本月分类占比</h3>
@@ -583,6 +756,17 @@
 
   <!-- ======== 设置 ======== -->
   <main class="page" id="page-settings">
+    <div class="set-group">
+      <div class="g-t">消费计划</div>
+      <div class="set-list">
+        <div class="set-item" id="btn-manage-budget">
+          <div class="s-ico" style="background:rgba(255,149,0,.12)">🎯</div>
+          <div class="s-txt">月度预算<span class="s-sub" style="display:block;margin-top:1px" id="budget-summary">设置每月支出预算，实时跟踪进度</span></div>
+          <div class="s-arrow">›</div>
+        </div>
+      </div>
+    </div>
+
     <div class="set-group">
       <div class="g-t">分类管理</div>
       <div class="set-list">
@@ -658,7 +842,7 @@
   <button class="fab" id="fab" aria-label="记一笔">＋</button>
 
   <!-- ======== 记账弹层 ======== -->
-  <div class="sheet-mask" id="sheet-mask"></div>
+  <div class="sheet-mask" id="sheet-add-mask"></div>
   <div class="sheet" id="sheet-add">
     <div class="grab"></div>
     <button class="sheet-close" id="sheet-close">✕</button>
@@ -670,9 +854,15 @@
     </div>
 
     <input class="amt-input" id="in-amount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off">
+    <div class="amt-quick" id="amt-quick">
+      <button data-v="10">10</button>
+      <button data-v="20">20</button>
+      <button data-v="50">50</button>
+      <button data-v="100">100</button>
+    </div>
     <div class="voice-row">
       <button class="voice-btn" id="btn-voice" title="语音记账">🎤 语音记账</button>
-      <span class="voice-hint" id="voice-hint">说出「美团外卖 25 元」，自动识别并填写</span>
+      <span class="voice-hint" id="voice-hint">试说：美团25元 · 坐地铁4块 · 收到工资5000</span>
     </div>
 
     <div class="cat-grid" id="sheet-cats"></div>
@@ -700,7 +890,7 @@
     <div class="grab"></div>
     <button class="sheet-close" id="smart-close">✕</button>
     <h3>智能识别 · 自动记账</h3>
-    <p style="font-size:.82rem;color:var(--muted);margin-bottom:4px">粘贴支付宝、微信支付、银行卡的扣款通知文本，自动提取金额、商户并智能分类：</p>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:4px">先复制支付通知，点首页「一键记账」更快；若 iOS 拦截读取，直接长按粘贴到下方：</p>
     <div class="field">
       <label>账单文本</label>
       <textarea id="in-notify" placeholder="例如：支付宝到账提醒，您于08-01 12:30 在 美团外卖 消费 25.00 元。"></textarea>
@@ -710,7 +900,7 @@
       <div class="parse-sample" data-s="微信支付凭证：京东商城 ¥199.00 已支付"><b>微信 · 京东</b>支付凭证</div>
       <div class="parse-sample" data-s="【银行短信】您尾号6688卡8月1日消费滴滴出行18.50元"><b>银行 · 滴滴</b>消费短信</div>
     </div>
-    <button class="btn-primary" id="btn-parse-go">⚡ 开始识别</button>
+    <button class="btn-primary" id="btn-parse-go">⚡ 识别输入的账单文本</button>
     <div class="parse-result" id="parse-result-big"></div>
     <button class="btn-ghost" id="btn-parse-save" style="display:none">确认并入账</button>
   </div>
@@ -785,6 +975,27 @@
       <select id="rule-cat"></select>
     </div>
     <button class="btn-primary" id="btn-rule-save">保存规则</button>
+  </div>
+
+  <!-- ======== 预算设置弹层 ======== -->
+  <div class="sheet-mask" id="budget-mask"></div>
+  <div class="sheet" id="sheet-budget">
+    <div class="grab"></div>
+    <button class="sheet-close" id="budget-close">✕</button>
+    <h3>月度预算</h3>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:4px">设置后首页实时显示支出进度，超过 80% 提醒，超支红色警示。</p>
+    <input class="amt-input" id="budget-amount" type="text" inputmode="decimal" placeholder="每月总支出预算（元）" autocomplete="off">
+    <div class="budget-quick" id="budget-quick">
+      <button data-v="1000">¥1000</button>
+      <button data-v="2000">¥2000</button>
+      <button data-v="3000">¥3000</button>
+      <button data-v="5000">¥5000</button>
+    </div>
+    <div class="divider"></div>
+    <h3 style="font-size:.9rem;margin-bottom:6px">分类预算（可选）</h3>
+    <div class="cat-budget-list" id="cat-budget-list"></div>
+    <button class="btn-primary" id="btn-budget-save">保存预算</button>
+    <button class="btn-ghost" id="btn-budget-clear">清除预算</button>
   </div>
 
   <!-- ======== 全部账单弹层 ======== -->
