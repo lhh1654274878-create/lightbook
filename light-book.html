@@ -40,7 +40,30 @@
       --shadow: 0 1px 3px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.06);
       --tab-h: 60px;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
+      color-scheme: light;
     }
+
+    /* ==== 深色模式（默认跟随系统） ==== */
+    html[data-theme="dark"] {
+      --bg: #000000;
+      --bg2: #1C1C1E;
+      --ink: #F2F2F7;
+      --muted: #98989E;
+      --rule: #2C2C2E;
+      --shadow: 0 1px 3px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.4);
+      color-scheme: dark;
+    }
+    html[data-theme="dark"] .topbar { background: rgba(0,0,0,.82); }
+    html[data-theme="dark"] .tabbar { background: rgba(22,22,24,.9); border-top-color: #2C2C2E; }
+    html[data-theme="dark"] .quick-btn, html[data-theme="dark"] .ap-btn,
+    html[data-theme="dark"] .repeat-chip, html[data-theme="dark"] .cal-cell,
+    html[data-theme="dark"] .budget-quick button, html[data-theme="dark"] .amt-quick button,
+    html[data-theme="dark"] .imp-mode label, html[data-theme="dark"] .parse-sample { background: #2C2C2E; }
+    html[data-theme="dark"] .summary-card { box-shadow: 0 12px 28px rgba(0,0,0,.5); }
+    html[data-theme="dark"] .fab { border-color: #000; }
+    html[data-theme="dark"] .type-switch, html[data-theme="dark"] .stat-tabs, html[data-theme="dark"] .month-nav { background: rgba(255,255,255,.08); }
+    html[data-theme="dark"] .set-item .toggle { background: #39393D; }
+    html[data-theme="dark"] .toast { background: rgba(242,242,247,.95); color: #1C1C1E; }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     html { font-size: 16px; }
@@ -626,6 +649,24 @@
     .mini-note { font-size: .72rem; color: var(--muted); margin-top: 10px; text-align: center; line-height: 1.7; }
     .mini-note code { background: rgba(0,0,0,.05); padding: 1px 6px; border-radius: 5px; font-size: .7rem; }
 
+    /* 应用内确认弹层 */
+    .confirm-sheet { max-width: 320px; border-radius: 22px; bottom: auto; top: 50%; transform: translateX(-50%) translateY(-50%) scale(.96); opacity: 0; transition: opacity .18s, transform .18s; padding: 10px 18px 20px; }
+    .confirm-sheet.show { transform: translateX(-50%) translateY(-50%) scale(1); opacity: 1; }
+    .confirm-sheet .btn-primary { margin-top: 6px; padding: 12px; }
+    .confirm-sheet .btn-ghost { margin-top: 8px; padding: 10px; }
+    .confirm-sheet.danger .btn-primary { background: var(--danger); }
+    .confirm-sheet .btn-primary { margin-top: 6px; }
+
+    /* 导入模式选择 */
+    .imp-mode { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .imp-mode label { display: flex; align-items: center; gap: 8px; font-size: .82rem; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 10px; padding: 9px 12px; cursor: pointer; }
+    .imp-mode label:active { border-color: var(--accent); }
+    .imp-mode input { accent-color: var(--accent); }
+
+    /* 编辑账单删除按钮 */
+    .del-bill-btn { width: 100%; border: 1px solid rgba(255,59,48,.3); border-radius: 12px; padding: 11px; background: rgba(255,59,48,.08); color: var(--danger); font-size: .88rem; font-weight: 600; cursor: pointer; margin-top: 14px; }
+    .del-bill-btn:active { opacity: .8; }
+
     @media (min-width: 520px) {
       .fab { left: calc(50% + 240px - 29px); }
     }
@@ -695,7 +736,7 @@
     <div class="today-summary" id="today-summary"></div>
     <div class="search-box" id="search-box">
       <span class="search-ico">🔍</span>
-      <input type="text" id="search-input" placeholder="搜索商户 / 分类…" autocomplete="off">
+      <input type="text" id="search-input" placeholder="搜索商户/分类，或输 =25、>100、8-01" autocomplete="off">
       <button class="search-clear" id="search-clear">✕</button>
     </div>
     <div id="bill-area"></div>
@@ -814,6 +855,18 @@
     </div>
 
     <div class="set-group">
+      <div class="g-t">外观</div>
+      <div class="set-list">
+        <div class="set-item" id="btn-theme">
+          <div class="s-ico" style="background:rgba(88,86,214,.12)">🌗</div>
+          <div class="s-txt">深色模式<span class="s-sub" style="display:block;margin-top:1px" id="theme-sub">跟随系统</span></div>
+          <div class="s-val" id="theme-val">自动</div>
+          <div class="s-arrow">›</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="set-group">
       <div class="g-t">使用提示</div>
       <div class="set-list">
         <div class="set-item" id="btn-help">
@@ -824,7 +877,7 @@
       </div>
     </div>
 
-    <p class="mini-note">轻记账 LightBook · 数据保存在本机浏览器<br><code>localStorage</code> 离线可用 · 无需联网</p>
+    <p class="mini-note">轻记账 LightBook <span id="app-version"></span> · 数据保存在本机浏览器<br><code>localStorage</code> 离线可用 · 无需联网</p>
   </main>
 
   <!-- ======== 底部 Tab ======== -->
@@ -891,6 +944,18 @@
     </div>
 
     <button class="btn-primary" id="btn-save">保存</button>
+    <button class="del-bill-btn" id="btn-del-bill" style="display:none">删除这笔账单</button>
+  </div>
+
+  <!-- ======== 导出选择弹层（iOS 下连发两个下载会失败，改为用户选择格式） ======== -->
+  <div class="sheet-mask" id="export-mask"></div>
+  <div class="sheet" id="sheet-export">
+    <div class="grab"></div>
+    <button class="sheet-close" id="export-close" type="button">✕</button>
+    <h3>导出账单</h3>
+    <button class="btn-primary" id="btn-export-json">导出 JSON 备份（完整数据）</button>
+    <button class="btn-ghost" id="btn-export-csv">导出 CSV 表格（Excel 可开）</button>
+    <p class="mini-note">iPhone 上文件会存到「文件」App → 下载项<br>建议定期导出 JSON 备份，防止清浏览器数据时丢失</p>
   </div>
 
   <!-- ======== 智能识别弹层 ======== -->
@@ -1036,30 +1101,63 @@
   </div>
 
   <div class="toast" id="toast"></div>
+
+  <!-- ======== 应用内确认弹层（替代系统 confirm，iOS PWA 下 confirm 不可靠） ======== -->
+  <div class="sheet-mask" id="confirm-mask"></div>
+  <div class="sheet confirm-sheet" id="sheet-confirm">
+    <div class="grab"></div>
+    <h3 id="confirm-title">确认</h3>
+    <p style="font-size:.86rem;color:var(--muted);text-align:center;margin:2px 0 14px" id="confirm-msg"></p>
+    <button class="btn-primary" id="confirm-ok">确定</button>
+    <button class="btn-ghost" id="confirm-cancel">取消</button>
+  </div>
+
   <div class="sheet-mask" id="sheet-import-mask"></div>
 <div class="sheet" id="sheet-import">
   <div class="grab"></div>
   <button class="sheet-close" id="import-close" type="button">✕</button>
   <h3>导入备份</h3>
-  <p style="font-size:.82rem;color:var(--muted)">选择文件，或把备份内容全部粘贴到下面。导入后会覆盖当前账单。</p>
+  <p style="font-size:.82rem;color:var(--muted)">选择文件，或把备份内容全部粘贴到下面。默认合并到现有账单，也可选择覆盖。</p>
   <button class="btn-primary" id="btn-import-file" type="button">选择备份文件</button>
   <div class="field">
     <label>或粘贴 JSON</label>
     <textarea id="in-backup" style="min-height:180px" placeholder="把备份文件里的内容全部粘贴到这里"></textarea>
   </div>
+  <div class="imp-mode" id="imp-mode">
+    <label><input type="radio" name="imp-mode" value="merge" checked>合并（保留现有账单，跳过重复）</label>
+    <label><input type="radio" name="imp-mode" value="replace">覆盖（清空现有，只留导入内容）</label>
+  </div>
   <button class="btn-ghost" id="btn-import-paste" type="button">导入粘贴的内容</button>
 </div>
-<input type="file" id="file-import" accept=".json,.txt,application/json,text/plain,text/json" style="display:none">
+<input type="file" id="file-import" accept=".json,.txt,application/json,text/plain,text/json" aria-hidden="true" style="position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0">
 </div>
 
+<script>window.__LB_VERSION = '16';</script>
 <script src="./_shared/js/echarts.min.js"></script>
 <script src="./assets/app.js"></script>
 <script src="./assets/charts.js"></script>
 <script>
-  /* 注册 Service Worker：HTTPS 下启用，离线可用（file:// 环境自动跳过） */
+  /* 注册 Service Worker：HTTPS 下启用，离线可用（file:// 环境自动跳过）
+     检测到新版本时轻提示，用户下次打开自动生效 */
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').catch(function () {});
+      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        reg.addEventListener('updatefound', function () {
+          var nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', function () {
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              var t = document.getElementById('toast');
+              if (t) {
+                t.textContent = '新版本已就绪，重新打开即生效';
+                t.classList.add('show');
+                clearTimeout(t._timer);
+                t._timer = setTimeout(function () { t.classList.remove('show'); }, 3000);
+              }
+            }
+          });
+        });
+      }).catch(function () {});
     });
   }
 </script>
