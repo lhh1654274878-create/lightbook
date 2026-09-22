@@ -741,6 +741,7 @@
     $('all-month-label').textContent = ym.y + '年' + ym.m + '月';
     /* 全部账单弹层：懒加载，仅打开时渲染 */
     if (window.__allSheetOpen) renderAllSheet();
+    renderRepeatRow();
   }
 
   /* 搜索过滤 */
@@ -1214,6 +1215,137 @@
     toast('示例数据已载入');
   }
 
+
+  function recentRepeats() {
+    var seen = {};
+    var out = [];
+    for (var i = state.bills.length - 1; i >= 0 && out.length < 6; i--) {
+      var b = state.bills[i];
+      if (!b || !(Number(b.amount) > 0)) continue;
+      var key = [b.type, b.cat, b.remark || '', b.amount].join('|');
+      if (seen[key]) continue;
+      seen[key] = true;
+      out.push(b);
+    }
+    return out;
+  }
+
+  function renderRepeatRow() {
+    var row = $('repeat-row');
+    if (!row) return;
+    var items = recentRepeats();
+    row._items = items;
+    if (!items.length) {
+      row.innerHTML = '<button class="repeat-chip" type="button" data-demo="1">＋ 先记一笔，之后点这里再记</button>';
+      return;
+    }
+    row.innerHTML = items.map(function (b, i) {
+      var c = getCat(b.cat) || { icon: '🧾', name: '未分类' };
+      var label = b.remark || c.name;
+      return '<button class="repeat-chip' + (b.type === 'income' ? ' inc' : '') + '" type="button" data-i="' + i + '">' +
+        '<span>' + c.icon + '</span><b>' + esc(label) + '</b><em>' + (b.type === 'income' ? '+' : '') + fmtMoney(b.amount) + '</em></button>';
+    }).join('');
+  }
+
+  function offerUndo(bill) {
+    if (!bill) return;
+    var card = $('detect-card');
+    if (!card) { toast('已入账 ¥' + fmtMoney(bill.amount)); return; }
+    var cat = getCat(bill.cat) || { name: '未分类', icon: '🧾' };
+    card.className = 'detect-card show';
+    card.innerHTML =
+      '<div class="dc-row"><div class="dc-info">' +
+        '<div class="dc-amt">已记入 ¥' + fmtMoney(bill.amount) + '</div>' +
+        '<div class="dc-detail">' + esc(bill.remark || cat.name) + ' · ' + cat.name + ' · 今天</div>' +
+      '</div><div class="dc-actions"><button class="dc-btn no" id="btn-undo" type="button">撤销</button></div></div>';
+    card.querySelector('#btn-undo').addEventListener('click', function () {
+      state.bills = state.bills.filter(function (item) { return item.id !== bill.id; });
+      save();
+      renderHome();
+      card.className = 'detect-card';
+      card.innerHTML = '';
+      toast('已撤销刚才那笔');
+    });
+  }
+
+  function quickRepeatBill(b) {
+    var cat = b.cat || autoClassify(b.remark, b.type) || (defaultCat(b.type) || {}).id;
+    var bill = {
+      id: uid(),
+      key: makeBillKey({ type: b.type, amount: b.amount, date: todayStr(), remark: b.remark }) + '|' + Date.now().toString(36),
+      type: b.type,
+      amount: Math.round(Number(b.amount) * 100) / 100,
+      cat: cat,
+      remark: b.remark || '再记一笔',
+      date: todayStr(),
+      source: 'repeat'
+    };
+    state.bills.push(bill);
+    save();
+    renderHome();
+    checkBudgetWarn();
+    offerUndo(bill);
+  }
+
+  function appPageUrl() {
+    if (location.protocol === 'file:') return 'https://lhh1654274878-create.github.io/lightbook/light-book.html';
+    var path = location.pathname || '/';
+    if (/index\.html$/.test(path)) path = path.replace(/index\.html$/, 'light-book.html');
+    else if (!/light-book\.html$/.test(path)) path = path.replace(/\/$/, '') + '/light-book.html';
+    return location.origin + path;
+  }
+
+  function showShortcutHelp() {
+    var card = $('detect-card');
+    var prefix = appPageUrl() + '?auto=1&add=';
+    card.className = 'detect-card show';
+    card.innerHTML =
+      '<div class="dc-detail" style="white-space:normal;line-height:1.55">从支付宝或微信通知点分享，即可自动识别金额并分类入账。只需设置一次：</div>' +
+      '<div class="dc-detail" style="white-space:normal;line-height:1.7;margin-top:6px">1. 打开「快捷指令」→ 新建，打开「在共享表单中显示」<br>2. 添加操作「打开 URL」<br>3. 网址填下面这段，末尾接上变量「快捷指令输入」。中文会被自动编码</div>' +
+      '<textarea class="dc-input" id="shortcut-url" rows="2" readonly></textarea>' +
+      '<div class="dc-batch-actions">' +
+        '<button class="dc-btn no" id="shortcut-copy" type="button">复制网址</button>' +
+        '<button class="dc-btn ok" id="shortcut-test" type="button">用示例试一次</button>' +
+      '</div>';
+    card.querySelector('#shortcut-url').value = prefix;
+    card.querySelector('#shortcut-copy').addEventListener('click', function () {
+      var text = prefix;
+      var done = function () { toast('已复制，粘贴到快捷指令的打开 URL'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function () {
+          card.querySelector('#shortcut-url').focus();
+          toast('请长按网址手动复制');
+        });
+      } else {
+        card.querySelector('#shortcut-url').focus();
+        toast('请长按网址手动复制');
+      }
+    });
+    card.querySelector('#shortcut-test').addEventListener('click', function () {
+      bookFromText('美团外卖25元', true);
+    });
+  }
+
+  function bookFromText(text, autoSave) {
+    var res = parseVoice(text) || parseNotify(text);
+    if (!res || res.amount === null) {
+      toast('没识别出金额，请换一种说法');
+      openSheetAdd({ remark: String(text || '').slice(0, 30) });
+      return null;
+    }
+    if (!autoSave) {
+      showDetectSingle(res);
+      return res;
+    }
+    if (findDuplicateBill(res)) {
+      toast('这笔已经记过，未重复入账');
+      return null;
+    }
+    var saved = saveParsedBill(res, 'shortcut');
+    if (saved) offerUndo(saved);
+    return saved;
+  }
+
   /* ============================================================
      自动检测：剪贴板识别 / 语音记账 / 粘贴即识别
      ============================================================ */
@@ -1339,7 +1471,6 @@
       checkBudgetWarn();
       if (added > 0) toast('已入账 ' + added + ' 笔 ✓' + (duplicates > 0 ? '，跳过 ' + duplicates + ' 笔重复' : ''));
       else toast('该账单似乎已记录，已防止重复入账');
-      toast('已入账 ' + n + ' 笔 ✓');
     });
     card.querySelector('#dc-batch-clear').addEventListener('click', function () {
       detectPending = [];
@@ -2158,23 +2289,25 @@
     /* ---- 自动检测：剪贴板 ---- */
     $('btn-detect-clip').addEventListener('click', function () { detectClipboard(); });
 
-    /* ---- 消费即自动记账开关 ---- */
-    $('auto-toggle').addEventListener('click', function () {
-      state.autoOn = !state.autoOn;
-      if (state.autoOn) {
-        if (!navigator.clipboard || !navigator.clipboard.readText) {
-          state.autoOn = false;
-          toast('当前浏览器不支持后台读取剪贴板，请在 Safari 中使用');
-          renderAutoToggle();
-          return;
-        }
-        toast('自动记账已开启 🎉 复制支付通知即可自动入账');
-      } else {
-        toast('自动记账已关闭');
-      }
-      autoOnChanged();
-      syncAutoDetect();
-    });
+    /* iPhone 无法稳定后台读剪贴板，不再提供轮询开关。 */
+    if ($('auto-toggle')) {
+      $('auto-toggle').addEventListener('click', function () {
+        toast('iPhone 不支持后台读取通知，请用上方常用账单、语音或分享入账');
+      });
+    }
+    if ($('repeat-row')) {
+      $('repeat-row').addEventListener('click', function (e) {
+        var btn = e.target.closest('.repeat-chip');
+        if (!btn) return;
+        if (btn.getAttribute('data-demo')) { openSheetAdd(); return; }
+        var items = $('repeat-row')._items || [];
+        var bill = items[parseInt(btn.getAttribute('data-i'), 10)];
+        if (bill) quickRepeatBill(bill);
+      });
+    }
+    if ($('btn-shortcut')) {
+      $('btn-shortcut').addEventListener('click', showShortcutHelp);
+    }
 
     /* ---- 自动检测：语音记账（首页） ---- */
     $('btn-voice-add').addEventListener('click', function () {
@@ -2225,8 +2358,8 @@
     renderHome(true);
     renderBudgetSummary();
     renderAuto();
-    renderAutoToggle();
-    syncAutoDetect();
+    stopAutoDetect();
+    renderRepeatRow();
     setTimeout(checkBudgetWarn, 800);
     setTimeout(handleLaunchParams, 600);
     if (!STORAGE_OK) {

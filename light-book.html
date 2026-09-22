@@ -236,6 +236,20 @@
     }
     .ap-btn.primary:active { background: #005ecb; border-color: #005ecb; }
     .ap-desc { font-size: .72rem; color: var(--muted); margin-top: 8px; line-height: 1.6; }
+    .repeat-row { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; padding-bottom: 2px; -webkit-overflow-scrolling: touch; }
+    .repeat-chip {
+      flex: none; border: 1px solid var(--rule); background: var(--bg); color: var(--ink);
+      border-radius: 999px; padding: 8px 12px; font-size: .75rem; font-weight: 600;
+      display: flex; align-items: center; gap: 6px; cursor: pointer; max-width: 220px;
+    }
+    .repeat-chip b { font-weight: 700; max-width: 7.2em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .repeat-chip em { font-style: normal; font-family: var(--num); color: var(--muted); }
+    .repeat-chip.inc em { color: var(--accent2); }
+    .repeat-chip:active, .ap-link:active { border-color: var(--accent); background: rgba(0,122,255,.08); }
+    .ap-link {
+      margin-top: 8px; width: 100%; justify-content: center; background: rgba(0,122,255,.08);
+      border-color: rgba(0,122,255,.25); color: var(--accent);
+    }
     .detect-card {
       display: none; margin-top: 10px; border-radius: 12px; padding: 12px;
       background: linear-gradient(135deg, rgba(52,199,89,.1), rgba(0,122,255,.08));
@@ -650,23 +664,18 @@
 
     <div class="quick-grid" id="quick-grid"></div>
 
-    <!-- 快速录入面板：一键粘贴 + 语音记账 -->
+    <!-- 快速录入：再记一笔 + 语音，粘贴只做兜底 -->
     <div class="auto-panel">
       <div class="auto-panel-head">
-        <div class="auto-panel-title"><span class="ap-bolt">⚡</span>自动识别 · 免输入</div>
+        <div class="auto-panel-title"><span class="ap-bolt">⚡</span>快速记账</div>
         <div class="auto-panel-actions">
-          <button class="ap-btn primary" id="btn-detect-clip"><span>📋</span>一键记账</button>
-          <button class="ap-btn" id="btn-voice-add"><span>🎤</span>语音记账</button>
+          <button class="ap-btn primary" id="btn-voice-add"><span>🎤</span>语音记账</button>
+          <button class="ap-btn" id="btn-detect-clip"><span>📋</span>识别通知</button>
         </div>
       </div>
-      <div class="auto-toggle" id="auto-toggle">
-        <div class="at-left">
-          <div class="at-txt">自动记账已关闭</div>
-          <div class="at-sub">先复制支付通知，再一键确认更可靠</div>
-        </div>
-        <div class="at-sw" id="auto-sw">OFF</div>
-      </div>
-      <div class="ap-desc">说「美团25元」「坐地铁4块」「收到工资5000」，自动填好账单；也可复制支付通知后点「一键记账」</div>
+      <div class="repeat-row" id="repeat-row"></div>
+      <div class="ap-desc">点常用账单再记一笔，或直接说「美团25元」。不用复制通知，也不依赖后台读取剪贴板。</div>
+      <button class="ap-btn ap-link" id="btn-shortcut">📲 用 iPhone 分享入账</button>
       <div class="detect-card" id="detect-card"></div>
     </div>
 
@@ -890,7 +899,7 @@
     <div class="grab"></div>
     <button class="sheet-close" id="smart-close">✕</button>
     <h3>智能识别 · 自动记账</h3>
-    <p style="font-size:.82rem;color:var(--muted);margin-bottom:4px">先复制支付通知，点首页「一键记账」更快；若 iOS 拦截读取，直接长按粘贴到下方：</p>
+    <p style="font-size:.82rem;color:var(--muted);margin-bottom:4px">日常直接点常用账单或语音。只有新的支付通知，才粘贴到下方：</p>
     <div class="field">
       <label>账单文本</label>
       <textarea id="in-notify" placeholder="例如：支付宝到账提醒，您于08-01 12:30 在 美团外卖 消费 25.00 元。"></textarea>
@@ -1018,7 +1027,7 @@
       <p><b>📱 添加到主屏幕</b></p>
       <p style="color:var(--muted);font-size:.8rem">在 iPhone Safari 中打开本页 → 分享按钮 → 「添加到主屏幕」，即可像原生 App 一样全屏使用。</p>
       <p style="margin-top:10px"><b>⚡ 自动记账三种方式</b></p>
-      <p style="color:var(--muted);font-size:.8rem">1. 点首页「智能识别」，粘贴支付宝/微信支付通知，自动提取金额、商户、日期并分类；2. 设置周期记账（工资、房租、会员），每月自动生成账单；3. 记一笔时输入商户名，自动匹配分类。</p>
+      <p style="color:var(--muted);font-size:.8rem">1. 首页点常用账单再记一笔，或语音说「美团25元」，自动分类；2. iPhone 可设置「分享入账」，从支付宝/微信通知直接入账；3. 周期账单（工资、房租）每月自动生成。</p>
       <p style="margin-top:10px"><b>🗂 智能分类</b></p>
       <p style="color:var(--muted);font-size:.8rem">内置 40+ 关键词规则（美团→餐饮、滴滴→交通、京东→购物…），在「自动记账」页可查看和自定义。</p>
       <p style="margin-top:10px"><b>🔒 隐私</b></p>

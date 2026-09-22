@@ -2,9 +2,10 @@
    轻记账 LightBook · Service Worker
    首次访问后缓存全部资源，之后完全离线可用
    ============================================================ */
-var CACHE_NAME = 'lightbook-v11';
+var CACHE_NAME = 'lightbook-v13';
 var APP_SHELL = [
   './',
+  './index.html',
   './light-book.html',
   './manifest.json',
   './assets/app.js',
@@ -47,7 +48,8 @@ self.addEventListener('fetch', function (e) {
   var req = e.request;
   if (req.method !== 'GET') return;
   var url = new URL(req.url);
-  if (url.origin !== location.origin) return; // 不代理跨域
+  if (url.origin !== location.origin) return;
+  if (url.pathname.endsWith('/sw.js')) return;
   e.respondWith(
     caches.match(req).then(function (hit) {
       if (hit) return hit;
