@@ -1188,10 +1188,92 @@
     if (sheet) sheet.classList.remove('show');
   }
   function hideAllSheets() {
-    ['sheet-add', 'sheet-smart', 'sheet-cat', 'sheet-rec', 'sheet-rule', 'sheet-all', 'sheet-help'].forEach(hideSheet);
+    ['sheet-add', 'sheet-smart', 'sheet-cat', 'sheet-rec', 'sheet-rule', 'sheet-all', 'sheet-help', 'sheet-import'].forEach(hideSheet);
   }
 
   /* ---------- 数据导入导出 ---------- */
+
+  function normalizeBackupDate(value) {
+    var text = String(value || "").trim();
+    var match = text.match(/(20\d{2})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/);
+    if (!match) return "";
+    var month = parseInt(match[2], 10);
+    var day = parseInt(match[3], 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31) return "";
+    return match[1] + "-" + pad(month) + "-" + pad(day);
+  }
+  function parseBackupText(raw) {
+    var text = String(raw || "").replace(/^\uFEFF/, "").trim();
+    if (!text) throw new Error("empty");
+    var data;
+    try { data = JSON.parse(text); }
+    catch (err) {
+      var start = text.indexOf("{");
+      var end = text.lastIndexOf("}");
+      if (start < 0 || end <= start) throw err;
+      data = JSON.parse(text.slice(start, end + 1));
+    }
+    if (Array.isArray(data)) data = { bills: data };
+    if (!data || !Array.isArray(data.bills)) throw new Error("bad");
+    var bills = [];
+    data.bills.forEach(function (bill) {
+      if (!bill) return;
+      var amount = Number(String(bill.amount).replace(/,/g, ""));
+      var date = normalizeBackupDate(bill.date);
+      if (!(amount > 0) || !date) return;
+      var item = {
+        id: bill.id || uid(),
+        key: bill.key || "",
+        fp: bill.fp || "",
+        type: bill.type === "income" ? "income" : "expense",
+        amount: Math.round(amount * 100) / 100,
+        cat: bill.cat || "",
+        remark: bill.remark == null ? "" : String(bill.remark),
+        date: date,
+        source: bill.source || "manual"
+      };
+      if (bill.recurringId) item.recurringId = bill.recurringId;
+      bills.push(item);
+    });
+    if (!bills.length) throw new Error("bad");
+    data.bills = bills;
+    return data;
+  }
+  function applyBackup(data) {
+    state.cats = data.cats && data.cats.length ? data.cats : state.cats;
+    state.rules = data.rules && data.rules.length ? data.rules : state.rules;
+    state.bills = data.bills;
+    state.bills.forEach(function (bill) {
+      if (!bill.key) bill.key = makeBillKey(bill);
+    });
+    state.recurring = data.recurring || [];
+    state.budget = Number(data.budget) || 0;
+    state.catBudgets = data.catBudgets || {};
+    state.learned = data.learned || [];
+    buildRuleIndex();
+    saveNow();
+    renderHome(true);
+    renderAuto();
+    renderStats();
+    toast("\u5df2\u5bfc\u5165 " + state.bills.length + " \u7b14");
+  }
+  function readBackupFile(file, done) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var bytes = new Uint8Array(reader.result);
+        var encoding = "utf-8";
+        var start = 0;
+        if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xFE) encoding = "utf-16le";
+        else if (bytes.length >= 2 && bytes[0] === 0xFE && bytes[1] === 0xFF) encoding = "utf-16be";
+        else if (bytes.length >= 3 && bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) start = 3;
+        done(new TextDecoder(encoding).decode(start ? bytes.subarray(start) : bytes));
+      } catch (err) { done(""); }
+    };
+    reader.onerror = function () { done(""); };
+    reader.readAsArrayBuffer(file);
+  }
+
   function exportJSON() {
     var data = { app: 'lightbook', version: 1, exportedAt: new Date().toISOString(),
       cats: state.cats, rules: state.rules, bills: state.bills, recurring: state.recurring,
@@ -2364,31 +2446,44 @@
       exportJSON();
       setTimeout(exportCSV, 300);
     });
-    $('btn-import').addEventListener('click', function () { $('file-import').click(); });
-    $('file-import').addEventListener('change', function () {
-      var f = this.files[0];
-      if (!f) return;
-      var reader = new FileReader();
-      reader.onload = function () {
+    $('btn-import').addEventListener('click', function () {
+      if ($('sheet-import')) showSheet('sheet-import');
+      else if ($('file-import')) $('file-import').click();
+    });
+    if ($('btn-import-file')) {
+      $('btn-import-file').addEventListener('click', function () { $('file-import').click(); });
+    }
+    if ($('import-close')) $('import-close').addEventListener('click', function () { hideSheet('sheet-import'); });
+    if ($('sheet-import-mask')) $('sheet-import-mask').addEventListener('click', function () { hideSheet('sheet-import'); });
+    if ($('btn-import-paste')) {
+      $('btn-import-paste').addEventListener('click', function () {
+        var text = $('in-backup') ? $('in-backup').value : '';
         try {
-          var d = JSON.parse(reader.result);
-          if (!d.bills) throw new Error('bad');
-          state.cats = d.cats || state.cats;
-          state.rules = d.rules || state.rules;
-          state.bills = d.bills;
-          state.recurring = d.recurring || state.recurring;
-          state.budget = d.budget || 0;
-          state.catBudgets = d.catBudgets || {};
-          state.learned = d.learned || [];
-          buildRuleIndex();
-          saveNow(); renderHome(true); renderAuto(); renderStats();
-          toast('数据导入成功 ✓');
-        } catch (e) {
-          toast('导入失败：文件格式不正确');
+          var data = parseBackupText(text);
+          if (!confirm('\u5bfc\u5165\u4f1a\u8986\u76d6\u5f53\u524d\u8d26\u5355\uff0c\u7ee7\u7eed\uff1f')) return;
+          applyBackup(data);
+          if ($('in-backup')) $('in-backup').value = '';
+          hideSheet('sheet-import');
+        } catch (err) {
+          toast('\u5bfc\u5165\u5931\u8d25\uff1a\u8bf7\u7c98\u8d34\u5b8c\u6574\u7684\u8f7b\u8bb0\u8d26 JSON \u5907\u4efd');
         }
-      };
-      reader.readAsText(f);
-      this.value = '';
+      });
+    }
+    $('file-import').addEventListener('change', function () {
+      var input = this;
+      var file = input.files && input.files[0];
+      if (!file) return;
+      readBackupFile(file, function (text) {
+        input.value = '';
+        try {
+          var data = parseBackupText(text);
+          if (!confirm('\u5bfc\u5165\u4f1a\u8986\u76d6\u5f53\u524d\u8d26\u5355\uff0c\u7ee7\u7eed\uff1f')) return;
+          applyBackup(data);
+          hideSheet('sheet-import');
+        } catch (err) {
+          toast('\u5bfc\u5165\u5931\u8d25\uff1a\u8bf7\u9009\u62e9\u8f7b\u8bb0\u8d26\u5bfc\u51fa\u7684 JSON \u5907\u4efd');
+        }
+      });
     });
     $('btn-demo').addEventListener('click', function () {
       if (!confirm('载入示例数据将追加示例账单，确定？')) return;

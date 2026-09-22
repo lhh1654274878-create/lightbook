@@ -2,7 +2,7 @@
    轻记账 LightBook · Service Worker
    首次访问后缓存全部资源，之后完全离线可用
    ============================================================ */
-var CACHE_NAME = 'lightbook-v14';
+var CACHE_NAME = 'lightbook-v15';
 var APP_SHELL = [
   './',
   './index.html',
