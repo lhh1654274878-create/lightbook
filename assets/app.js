@@ -1288,22 +1288,86 @@
     var sel = document.querySelector('input[name="imp-mode"]:checked');
     return sel ? sel.value : 'merge';
   }
+  /* 合并导入：以「账单 id」判重（key 只是展示用指纹，
+     同一天两笔相同金额会撞 key，不能拿来判重） */
+  function runImportMerge(data) {
+    var known = {};
+    state.bills.forEach(function (b) { if (b.id) known[b.id] = true; });
+    var before = state.bills.length;
+    var added = 0;
+    data.bills.forEach(function (b) {
+      if (b.id && known[b.id]) return;      /* 同一笔，跳过 */
+      if (b.id) known[b.id] = true;
+      state.bills.push(b);
+      added++;
+    });
+    /* 分类 / 规则：导入内容优先，缺失的保留现有 */
+    if (data.cats && data.cats.length) {
+      var catIds = {};
+      data.cats.forEach(function (c) { catIds[c.id] = true; });
+      state.cats.forEach(function (c) { if (!catIds[c.id]) data.cats.push(c); });
+      state.cats = data.cats;
+    }
+    if (data.rules && data.rules.length) {
+      var ruleKws = {};
+      data.rules.forEach(function (r) { ruleKws[r.kw] = true; });
+      state.rules.forEach(function (r) { if (!ruleKws[r.kw]) data.rules.push(r); });
+      state.rules = data.rules;
+    }
+    /* 周期账单：同 id 去重后追加 */
+    if (data.recurring && data.recurring.length) {
+      var rids = {};
+      state.recurring.forEach(function (r) { rids[r.id] = true; });
+      data.recurring.forEach(function (r) { if (!rids[r.id]) state.recurring.push(r); });
+    }
+    if (data.budget) state.budget = Number(data.budget) || state.budget;
+    if (data.catBudgets) state.catBudgets = Object.assign({}, state.catBudgets, data.catBudgets);
+    if (data.learned && data.learned.length) {
+      var lk = {};
+      state.learned.forEach(function (l) { lk[l.kw] = true; });
+      data.learned.forEach(function (l) { if (!lk[l.kw]) state.learned.push(l); });
+    }
+    return { added: added, skipped: data.bills.length - added, total: state.bills.length, before: before };
+  }
+
   function runImport(raw, srcInput) {
     var mode = importMode();
     var proceed = function () {
+      var data;
       try {
-        var data = parseBackupText(raw);
-        applyBackup(data, mode);
-        if ($('in-backup')) $('in-backup').value = '';
-        if (srcInput) srcInput.value = '';
-        hideSheet('sheet-import');
+        data = parseBackupText(raw);
       } catch (err) {
         toast('导入失败：内容不是有效的轻记账备份 JSON');
+        return;
       }
+      var summary;
+      try {
+        if (mode === 'replace') {
+          applyBackup(data);
+          summary = '覆盖完成：当前共 ' + state.bills.length + ' 笔';
+        } else {
+          var r = runImportMerge(data);
+          state.bills.forEach(function (b) { if (!b.key) b.key = makeBillKey(b); });
+          buildRuleIndex();
+          saveNow();
+          runRecurring();
+          renderHome(true);
+          renderAuto();
+          renderStats();
+          summary = '合并完成：新增 ' + r.added + ' 笔' + (r.skipped ? '，跳过重复 ' + r.skipped + ' 笔' : '') + '，共 ' + r.total + ' 笔';
+        }
+      } catch (err) {
+        toast('导入失败，数据未改动');
+        return;
+      }
+      if ($('in-backup')) $('in-backup').value = '';
+      if (srcInput) srcInput.value = '';
+      hideSheet('sheet-import');
+      toast(summary);
     };
     appConfirm(mode === 'replace'
       ? '覆盖导入将清空当前所有账单，只保留导入内容，确定继续？'
-      : '将合并导入备份，重复账单自动跳过，确定继续？',
+      : '将合并导入备份（同一笔账单自动跳过），确定继续？',
       proceed,
       { title: '导入备份', okText: mode === 'replace' ? '覆盖导入' : '合并导入', danger: mode === 'replace' });
   }
@@ -1333,6 +1397,7 @@
     if (Array.isArray(data)) data = { bills: data };
     if (!data || !Array.isArray(data.bills)) throw new Error("bad");
     var bills = [];
+    var usedIds = {};
     data.bills.forEach(function (bill) {
       if (!bill) return;
       var amount = Number(String(bill.amount).replace(/,/g, ""));
@@ -1350,58 +1415,24 @@
         source: bill.source || "manual"
       };
       if (bill.recurringId) item.recurringId = bill.recurringId;
+      /* 备份内 id 冲突时重新生成，保证每笔 id 唯一（合并导入按 id 判重） */
+      if (usedIds[item.id]) item.id = uid();
+      usedIds[item.id] = true;
       bills.push(item);
     });
     if (!bills.length) throw new Error("bad");
     data.bills = bills;
     return data;
   }
-  function applyBackup(data, mode) {
-    var bills = data.bills;
-    if (mode === 'replace') {
-      state.bills = bills;
-    } else {
-      /* 合并：按 key/fp 去重追加，保留现有账单 */
-      var known = {};
-      state.bills.forEach(function (b) {
-        known[b.fp ? 'fp:' + b.fp : 'key:' + (b.key || makeBillKey(b))] = true;
-      });
-      var before = state.bills.length;
-      bills.forEach(function (b) {
-        var k = b.fp ? 'fp:' + b.fp : 'key:' + (b.key || makeBillKey(b));
-        if (known[k]) return;
-        known[k] = true;
-        state.bills.push(b);
-      });
-      if (state.bills.length === before && bills.length) {
-        toast('导入完成：' + bills.length + ' 笔全部重复，已跳过');
-      }
-    }
-    /* 分类 / 规则 / 周期 / 预算：导入内容优先，缺失保留现有 */
-    if (data.cats && data.cats.length) {
-      var catIds = {};
-      data.cats.forEach(function (c) { catIds[c.id] = true; });
-      state.cats.forEach(function (c) { if (!catIds[c.id]) data.cats.push(c); });
-      state.cats = data.cats;
-    }
-    if (data.rules && data.rules.length) {
-      var ruleKws = {};
-      data.rules.forEach(function (r) { ruleKws[r.kw] = true; });
-      state.rules.forEach(function (r) { if (!ruleKws[r.kw]) data.rules.push(r); });
-      state.rules = data.rules;
-    }
-    state.recurring = (data.recurring && data.recurring.length) ? data.recurring.concat(state.recurring.filter(function (r) {
-      return !data.recurring.some(function (n) { return n.id === r.id; });
-    })) : state.recurring;
-    if (data.budget) state.budget = Number(data.budget) || state.budget;
-    if (data.catBudgets) {
-      state.catBudgets = Object.assign({}, state.catBudgets, data.catBudgets);
-    }
-    if (data.learned && data.learned.length) {
-      var lk = {};
-      state.learned.forEach(function (l) { lk[l.kw] = true; });
-      data.learned.forEach(function (l) { if (!lk[l.kw]) state.learned.push(l); });
-    }
+  /* 覆盖导入：整份替换（分类/规则/周期/预算一并替换） */
+  function applyBackup(data) {
+    state.bills = data.bills;
+    if (data.cats && data.cats.length) state.cats = data.cats;
+    if (data.rules && data.rules.length) state.rules = data.rules;
+    if (data.recurring) state.recurring = data.recurring;
+    state.budget = Number(data.budget) || 0;
+    state.catBudgets = data.catBudgets || {};
+    state.learned = data.learned || [];
     state.bills.forEach(function (bill) {
       if (!bill.key) bill.key = makeBillKey(bill);
     });
@@ -1411,7 +1442,6 @@
     renderHome(true);
     renderAuto();
     renderStats();
-    if (mode !== 'replace' || true) toast('已导入，当前共 ' + state.bills.length + ' 笔');
   }
   function readBackupFile(file, done) {
     var reader = new FileReader();
@@ -2572,7 +2602,6 @@
       $('btn-import-file').addEventListener('click', function () { $('file-import').click(); });
     }
     if ($('import-close')) $('import-close').addEventListener('click', function () { hideSheet('sheet-import'); });
-    if ($('sheet-import-mask')) $('sheet-import-mask').addEventListener('click', function () { hideSheet('sheet-import'); });
     if ($('btn-import-paste')) {
       $('btn-import-paste').addEventListener('click', function () {
         var text = $('in-backup') ? $('in-backup').value : '';
