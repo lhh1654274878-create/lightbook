@@ -96,10 +96,8 @@
     return [res.type, Math.round(Number(res.amount) * 100), res.date, remark].join('|');
   }
   function findDuplicateBill(res) {
-    var key = makeBillKey(res);
-    return state.bills.find(function (bill) {
-      return bill.key === key || makeBillKey(bill) === key;
-    }) || null;
+    if (!res || !res.fp) return null;
+    return state.bills.find(function (bill) { return bill.fp && bill.fp === res.fp; }) || null;
   }
   function saveParsedBill(res, source) {
     if (!res || !Number.isFinite(res.amount) || res.amount <= 0) return null;
@@ -107,11 +105,13 @@
     if (duplicate) return duplicate;
     var cat = res.cat || autoClassify(res.remark, res.type) || (defaultCat(res.type) || {}).id;
     var bill = {
-      id: uid(), key: makeBillKey(res), type: res.type, amount: Math.round(res.amount * 100) / 100,
+      id: uid(), key: makeBillKey(res) + '|' + Date.now().toString(36),
+      fp: res.fp || '',
+      type: res.type, amount: Math.round(res.amount * 100) / 100,
       cat: cat, remark: res.remark || '自动识别账单', date: res.date, source: source
     };
     state.bills.push(bill);
-    save();
+    saveNow();
     renderHome();
     checkBudgetWarn();
     return bill;
@@ -161,8 +161,18 @@
       if (_dirty) { _dirty = false; _write(); }
     }, 150);
   }
-  window.addEventListener('beforeunload', function () {
-    if (_dirty) { _dirty = false; _write(); }
+  function saveNow() {
+    _dirty = false;
+    if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+    _write();
+  }
+  function flushSave() {
+    if (_dirty) saveNow();
+  }
+  window.addEventListener('beforeunload', flushSave);
+  window.addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') flushSave();
   });
   function load() {
     try {
@@ -226,10 +236,20 @@
       _ruleIndex.push({ cat: l.cat, type: getCat(l.cat) ? getCat(l.cat).type : null, kws: [l.kw], exks: [], learned: true });
     });
   }
+  function categoryExcluded(text, catId) {
+    for (var i = 0; i < EXCLUDE_RULES.length; i++) {
+      if (EXCLUDE_RULES[i].cat !== catId) continue;
+      var words = String(EXCLUDE_RULES[i].kw).split(/\s+/);
+      for (var j = 0; j < words.length; j++) {
+        if (words[j] && text.indexOf(words[j]) >= 0) return true;
+      }
+    }
+    return false;
+  }
   function autoClassify(text, type) {
     if (!text) return null;
     var t = String(text);
-    var best = null, bestLen = 0;
+    var best = null, bestLen = 0, learnedBest = null, learnedLen = 0;
     var rules = _ruleIndex || state.rules.map(function (r) {
       var c = getCat(r.cat);
       return { cat: r.cat, type: c ? c.type : null, kws: String(r.kw).split(/\s+/).filter(Boolean) };
@@ -237,24 +257,16 @@
     for (var i = 0; i < rules.length; i++) {
       var r = rules[i];
       if (r.type !== type) continue;
+      if (categoryExcluded(t, r.cat)) continue;
       var kws = r.kws;
       for (var j = 0; j < kws.length; j++) {
-        if (t.indexOf(kws[j]) >= 0) {
-          /* 排除词否决：若命中词属于被排除词，跳过 */
-          if (r.exks && r.exks.length) {
-            var blocked = false;
-            for (var x = 0; x < r.exks.length; x++) {
-              if (kws[j].indexOf(r.exks[x]) >= 0 || r.exks[x].indexOf(kws[j]) >= 0) { blocked = true; break; }
-            }
-            if (blocked) continue;
-          }
-          if (kws[j].length > bestLen) {
-            best = r.cat; bestLen = kws[j].length;
-          }
+        if (t.indexOf(kws[j]) >= 0 && kws[j].length > (r.learned ? learnedLen : bestLen)) {
+          if (r.learned) { learnedBest = r.cat; learnedLen = kws[j].length; }
+          else { best = r.cat; bestLen = kws[j].length; }
         }
       }
     }
-    return best;
+    return learnedBest || best;
   }
 
   /* ---------- 自学习纠正 ----------
@@ -387,8 +399,8 @@
     if (!t) return null;
     var out = { amount: null, remark: '', date: todayStr(), type: 'expense' };
     /* 收入/支出方向 */
-    if (/(收到|收了|赚了|进账|到账|收入|发工资|红包|收款|入账|转入)/.test(t)) out.type = 'income';
-    else if (/(花了|花掉|付了|付给|消费|支付|支出|付款|买|打车|坐|充|交|还|吃|喝|逛)/.test(t)) out.type = 'expense';
+    if (/(拿到|领到|挣了|收到|收了|赚了|进账|到账|收入|发工资|红包|收款|入账|转入)/.test(t)) out.type = 'income';
+    else if (/(给了|花了|花掉|付了|付给|消费|支付|支出|付款|买|打车|坐|充|交|还|吃|喝|逛)/.test(t)) out.type = 'expense';
     /* 金额 */
     var a = extractVoiceAmt(t);
     if (a.val !== null) { out.amount = a.val; }
@@ -441,13 +453,24 @@
       amtLen = match.length;
     }
 
-    var m1 = s.match(/([¥￥]\s*)(\d+(?:\.\d{1,2})?)/);
-    var m2 = s.match(/(\d+(?:\.\d{1,2})?)\s*[元块]/);
-    var m3 = s.match(/(?:消费|支付|付款|支出|扣款|转账|收款|到账|收入|入账)(?:了|为|金额|人民币)?\s*[:：]?\s*(\d+(?:\.\d{1,2})?)/);
+    var pay = s.match(/(?:消费|支付|付款|支出|扣款|购买)(?:了|为|金额|人民币)?\s*[:：]?\s*(\d+(?:\.\d{1,2})?)/);
+    var incAmt = s.match(/(?:收款|到账|入账|收入|转入)(?:了|为|金额|人民币)?\s*[:：]?\s*(\d+(?:\.\d{1,2})?)/);
+    var yuan = s.match(/([¥￥]\s*)(\d+(?:\.\d{1,2})?)/);
+    var chosen = null;
+    if (pay) chosen = { match: pay[0], value: parseFloat(pay[1]) };
+    else if (incAmt) chosen = { match: incAmt[0], value: parseFloat(incAmt[1]) };
+    else if (yuan) chosen = { match: yuan[0], value: parseFloat(yuan[2]) };
+    else {
+      var yuanRe = /(\d+(?:\.\d{1,2})?)\s*[元块]/g, ym, last = null;
+      while ((ym = yuanRe.exec(s)) !== null) {
+        var ctx = s.slice(Math.max(0, ym.index - 8), ym.index);
+        if (/余额|可用|剩余|尾号/.test(ctx)) continue;
+        last = ym;
+      }
+      if (last) chosen = { match: last[0], value: parseFloat(last[1]) };
+    }
     var mCn = s.match(/([零一两三四五六七八九十百千万]+)[元块]/);
-    if (m1) locate(m1[0], parseFloat(m1[2]));
-    else if (m2) locate(m2[0], parseFloat(m2[1]));
-    else if (m3) locate(m3[0], parseFloat(m3[1]));
+    if (chosen) locate(chosen.match, chosen.value);
     else if (mCn) {
       var cnv = cnToNum(mCn[1]);
       if (cnv > 0) locate(mCn[0], cnv);
@@ -462,6 +485,8 @@
         .replace(/([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?/g, mask);
       var matches = [], re4 = /(?:^|[^0-9.])(\d+(?:\.\d{1,2})?)(?![0-9.])/g, mm4;
       while ((mm4 = re4.exec(clean)) !== null) {
+        var around = clean.slice(Math.max(0, mm4.index - 8), mm4.index + 6);
+        if (/余额|可用|剩余|尾号/.test(around)) continue;
         var candidate = parseFloat(mm4[1]);
         if (candidate > 0 && candidate <= 10000000) matches.push(mm4);
       }
@@ -501,33 +526,59 @@
       if (mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31) out.date = y + '-' + pad(mm) + '-' + pad(dd);
     }
 
-    if (out.amount === null && !out.remark) return null;
-    if (out.amount === null) {
-      var any = t.match(/(\d+(?:\.\d{1,2})?)/);
-      if (any) out.amount = parseFloat(any[1]);
-    }
+    if (!(out.amount > 0)) return null;
     return out;
   }
 
+  function looksLikeNotify(text) {
+    return /\u652f\u4ed8\u5b9d|\u5fae\u4fe1\u652f\u4ed8|\u5fae\u4fe1\u6536\u6b3e|\u4e91\u95ea\u4ed8|\u94f6\u8054|\u5c3e\u53f7|\u4f59\u989d|\u53ef\u7528\u4f59\u989d|\u652f\u4ed8\u6210\u529f|\u4ed8\u6b3e\u6210\u529f|\u6536\u6b3e\u6210\u529f|\u4ea4\u6613\u5355\u53f7/.test(String(text || ''));
+  }
+  function parseText(text) {
+    var raw = String(text || '');
+    var res = looksLikeNotify(raw) ? parseNotify(raw) : (parseVoice(raw) || parseNotify(raw));
+    if (!res || !(res.amount > 0)) return null;
+    if (!res.fp) res.fp = clipFingerprint(raw);
+    return res;
+  }
+
+  function monthIndex(y, m) { return y * 12 + (m - 1); }
   function runRecurring() {
     var now = curMonth();
     var today = new Date().getDate();
+    var nowIdx = monthIndex(now.y, now.m);
     var count = 0;
+    var changed = false;
     state.recurring.forEach(function (r) {
-      if (r.day > today) return;
-      var targetDay = Math.min(r.day, daysInMonth(now.y, now.m));
-      var dateStr = now.y + '-' + pad(now.m) + '-' + pad(targetDay);
-      var exists = state.bills.some(function (b) { return b.recurringId === r.id && b.date === dateStr; });
-      if (!exists) {
-        state.bills.push({
-          id: uid(), key: makeBillKey({ type: r.type, amount: r.amount, date: dateStr, remark: r.name }),
-          type: r.type, amount: r.amount, cat: r.cat,
-          remark: r.name, date: dateStr, source: 'recurring', recurringId: r.id
+      if (!r.since) {
+        r.since = monthStr(now);
+        changed = true;
+      }
+      var parts = String(r.since).split('-');
+      var sy = parseInt(parts[0], 10), sm = parseInt(parts[1], 10);
+      if (!sy || !sm) { sy = now.y; sm = now.m; }
+      var startIdx = Math.max(monthIndex(sy, sm), nowIdx - 5);
+      for (var idx = startIdx; idx <= nowIdx; idx++) {
+        var y = Math.floor(idx / 12);
+        var m = idx % 12 + 1;
+        var isCurrent = y === now.y && m === now.m;
+        if (isCurrent && r.day > today) continue;
+        var targetDay = Math.min(r.day, daysInMonth(y, m));
+        var dateStr = y + '-' + pad(m) + '-' + pad(targetDay);
+        var exists = state.bills.some(function (b) {
+          return (b.recurringId === r.id && b.date === dateStr) ||
+            (b.date === dateStr && b.type === r.type && Math.round(Number(b.amount) * 100) === Math.round(Number(r.amount) * 100) && String(b.remark || '') === String(r.name || ''));
         });
-        count++;
+        if (!exists) {
+          state.bills.push({
+            id: uid(), key: makeBillKey({ type: r.type, amount: r.amount, date: dateStr, remark: r.name }) + '|' + r.id,
+            type: r.type, amount: r.amount, cat: r.cat,
+            remark: r.name, date: dateStr, source: 'recurring', recurringId: r.id
+          });
+          count++;
+        }
       }
     });
-    if (count > 0) save();
+    if (count > 0 || changed) saveNow();
     return count;
   }
 
@@ -738,6 +789,14 @@
     /* 账单列表（数据变了必须重建；限制渲染数量 + content-visibility 虚拟化） */
     var shown = searchFilter(list);
     renderBillList($('bill-area'), shown.slice(0, 50), false);
+    if (shown.length > 50) {
+      var more = document.createElement('button');
+      more.type = 'button';
+      more.className = 'ap-btn ap-link';
+      more.textContent = '还有 ' + (shown.length - 50) + ' 笔，查看全部';
+      more.addEventListener('click', function () { $('btn-show-all').click(); });
+      $('bill-area').appendChild(more);
+    }
     $('all-month-label').textContent = ym.y + '年' + ym.m + '月';
     /* 全部账单弹层：懒加载，仅打开时渲染 */
     if (window.__allSheetOpen) renderAllSheet();
@@ -1037,22 +1096,6 @@
     }
     showSheet('sheet-add');
     setTimeout(function () { $('in-amount').focus(); }, 350);
-
-    /* 打开记一笔时自动检测剪贴板（无预填时静默填充） */
-    if (!prefill && navigator.clipboard && navigator.clipboard.readText) {
-      navigator.clipboard.readText().then(function (t) {
-        if (!t || !t.trim()) return;
-        if ($('in-amount').value && parseFloat($('in-amount').value) > 0) return;
-        var res = parseNotify(t);
-        if (res && res.amount !== null) {
-          autoFillSheet(res, true);
-          var p = $('parse-result');
-          p.className = 'parse-result';
-          p.style.display = 'block';
-          p.innerHTML = '⚡ 已自动识别剪贴板中的账单，确认后保存';
-        }
-      }).catch(function () {});
-    }
   }
 
   function setAddType(t) {
@@ -1151,7 +1194,8 @@
   /* ---------- 数据导入导出 ---------- */
   function exportJSON() {
     var data = { app: 'lightbook', version: 1, exportedAt: new Date().toISOString(),
-      cats: state.cats, rules: state.rules, bills: state.bills, recurring: state.recurring };
+      cats: state.cats, rules: state.rules, bills: state.bills, recurring: state.recurring,
+      budget: state.budget, catBudgets: state.catBudgets || {}, learned: state.learned || [] };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1256,11 +1300,11 @@
     card.innerHTML =
       '<div class="dc-row"><div class="dc-info">' +
         '<div class="dc-amt">已记入 ¥' + fmtMoney(bill.amount) + '</div>' +
-        '<div class="dc-detail">' + esc(bill.remark || cat.name) + ' · ' + cat.name + ' · 今天</div>' +
+        '<div class="dc-detail">' + esc(bill.remark || cat.name) + ' · ' + cat.name + ' · ' + esc(bill.date || todayStr()) + '</div>' +
       '</div><div class="dc-actions"><button class="dc-btn no" id="btn-undo" type="button">撤销</button></div></div>';
     card.querySelector('#btn-undo').addEventListener('click', function () {
       state.bills = state.bills.filter(function (item) { return item.id !== bill.id; });
-      save();
+      saveNow();
       renderHome();
       card.className = 'detect-card';
       card.innerHTML = '';
@@ -1268,20 +1312,83 @@
     });
   }
 
+  function showRepeatConfirm(b) {
+    var card = $('detect-card');
+    if (!card) return;
+    var c = getCat(b.cat) || { icon: '\uD83E\uDDFE', name: '\u672a\u5206\u7c7b' };
+    var cats = catsOf(b.type || 'expense');
+    var options = cats.map(function (cat) {
+      return '<option value="' + esc(cat.id) + '"' + (cat.id === b.cat ? ' selected' : '') + '>' + cat.icon + ' ' + esc(cat.name) + '</option>';
+    }).join('');
+    if (b.cat && !cats.some(function (cat) { return cat.id === b.cat; })) {
+      options = '<option value="' + esc(b.cat) + '" selected>' + esc(c.name) + '</option>' + options;
+    }
+    card.className = 'detect-card show';
+    card.innerHTML =
+      '<div class="dc-detail" style="white-space:normal">\u518d\u8bb0\u4e00\u7b14 \u00b7 ' + esc(b.remark || c.name) + '</div>' +
+      '<input class="dc-input" id="repeat-amt" inputmode="decimal" enterkeyhint="done" style="min-height:0" value="' + fmtMoney(b.amount) + '">' +
+      '<div style="display:flex;gap:8px">' +
+        '<input class="dc-input" id="repeat-date" type="date" style="min-height:0;flex:1.1" value="' + todayStr() + '">' +
+        '<select class="dc-input" id="repeat-cat" style="min-height:0;flex:1;width:auto">' + options + '</select>' +
+      '</div>' +
+      '<div class="dc-batch-actions">' +
+        '<button class="dc-btn no" id="repeat-cancel" type="button">\u53d6\u6d88</button>' +
+        '<button class="dc-btn ok" id="repeat-ok" type="button">\u786e\u8ba4\u5165\u8d26</button>' +
+      '</div>';
+    var input = card.querySelector('#repeat-amt');
+    function confirmRepeat() {
+      var amt = parseFloat(String(input.value).replace(/,/g, ''));
+      if (!amt || amt <= 0) { toast('\u8bf7\u8f93\u5165\u6709\u6548\u91d1\u989d'); return; }
+      var date = card.querySelector('#repeat-date').value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) date = todayStr();
+      var cat = card.querySelector('#repeat-cat').value || b.cat;
+      quickRepeatBill(Object.assign({}, b, { amount: amt, date: date, cat: cat }));
+    }
+    setTimeout(function () { input.focus(); input.select(); }, 60);
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); confirmRepeat(); }
+    });
+    card.querySelector('#repeat-cancel').addEventListener('click', function () {
+      card.className = 'detect-card';
+      card.innerHTML = '';
+    });
+    card.querySelector('#repeat-ok').addEventListener('click', confirmRepeat);
+  }
+  function offerUndoIds(ids) {
+    if (!ids || !ids.length) return;
+    var card = $('detect-card');
+    if (!card) { toast('\u5df2\u5165\u8d26 ' + ids.length + ' \u7b14'); return; }
+    card.className = 'detect-card show';
+    card.innerHTML =
+      '<div class="dc-row"><div class="dc-info">' +
+        '<div class="dc-amt">\u5df2\u8bb0\u5165 ' + ids.length + ' \u7b14</div>' +
+        '<div class="dc-detail">\u70b9\u64a4\u9500\u53ef\u4e00\u6b21\u6536\u56de</div>' +
+      '</div><div class="dc-actions"><button class="dc-btn no" id="btn-undo" type="button">\u64a4\u9500</button></div></div>';
+    card.querySelector('#btn-undo').addEventListener('click', function () {
+      var drop = {};
+      ids.forEach(function (id) { drop[id] = true; });
+      state.bills = state.bills.filter(function (item) { return !drop[item.id]; });
+      saveNow();
+      renderHome();
+      card.className = 'detect-card';
+      card.innerHTML = '';
+      toast('\u5df2\u64a4\u9500\u521a\u624d\u7684\u5165\u8d26');
+    });
+  }
   function quickRepeatBill(b) {
     var cat = b.cat || autoClassify(b.remark, b.type) || (defaultCat(b.type) || {}).id;
     var bill = {
       id: uid(),
-      key: makeBillKey({ type: b.type, amount: b.amount, date: todayStr(), remark: b.remark }) + '|' + Date.now().toString(36),
+      key: makeBillKey({ type: b.type, amount: b.amount, date: b.date || todayStr(), remark: b.remark }) + '|' + Date.now().toString(36),
       type: b.type,
       amount: Math.round(Number(b.amount) * 100) / 100,
       cat: cat,
       remark: b.remark || '再记一笔',
-      date: todayStr(),
+      date: b.date || todayStr(),
       source: 'repeat'
     };
     state.bills.push(bill);
-    save();
+    saveNow();
     renderHome();
     checkBudgetWarn();
     offerUndo(bill);
@@ -1327,8 +1434,8 @@
   }
 
   function bookFromText(text, autoSave) {
-    var res = parseVoice(text) || parseNotify(text);
-    if (!res || res.amount === null) {
+    var res = parseText(text);
+    if (!res) {
       toast('没识别出金额，请换一种说法');
       openSheetAdd({ remark: String(text || '').slice(0, 30) });
       return null;
@@ -1379,8 +1486,8 @@
       card.innerHTML = '<div class="dc-detail">📋 未检测到账单文本，请先复制支付通知</div>';
       return;
     }
-    var res = parseNotify(String(text));
-    if (!res || res.amount === null) {
+    var res = parseText(text);
+    if (!res) {
       card.className = 'detect-card show dc-empty';
       card.innerHTML = '<div class="dc-detail">⚠️ 未能识别出有效金额，请检查文本格式</div>';
       return;
@@ -1415,10 +1522,8 @@
     card.querySelector('.dc-btn.ok').addEventListener('click', function () {
       var isNew = !findDuplicateBill(res);
       var saved = saveParsedBill(Object.assign({}, res, { cat: cat }), 'auto');
-      card.className = 'detect-card';
-      card.innerHTML = '';
-      if (isNew && saved) toast('已自动入账并分类 ✓');
-      else toast('该账单似乎已记录，已防止重复入账');
+      if (isNew && saved) offerUndo(saved);
+      else { card.className = 'detect-card'; card.innerHTML = ''; toast('该账单似乎已记录，已防止重复入账'); }
     });
     card.querySelector('.dc-btn.no').addEventListener('click', function () {
       card.className = 'detect-card';
@@ -1456,21 +1561,20 @@
     html += '<div class="dc-batch-tip">已连续识别 ' + detectPending.length + ' 条，可逐条移除或一键全部入账</div>';
     card.innerHTML = html;
     card.querySelector('#dc-batch-save').addEventListener('click', function () {
-      var added = 0;
+      var known = {};
+      state.bills.forEach(function (bill) { known[bill.id] = true; });
+      var added = [];
       detectPending.forEach(function (r) {
-        if (!findDuplicateBill(r)) {
-          saveParsedBill(r, 'auto');
-          added++;
-        }
+        if (findDuplicateBill(r)) return;
+        var saved = saveParsedBill(r, 'auto');
+        if (saved && !known[saved.id]) added.push(saved.id);
       });
-      var duplicates = detectPending.length - added;
+      var duplicates = detectPending.length - added.length;
       detectPending = [];
-      card.className = 'detect-card';
-      card.innerHTML = '';
-      renderHome();
-      checkBudgetWarn();
-      if (added > 0) toast('已入账 ' + added + ' 笔 ✓' + (duplicates > 0 ? '，跳过 ' + duplicates + ' 笔重复' : ''));
-      else toast('该账单似乎已记录，已防止重复入账');
+      if (added.length > 1) offerUndoIds(added);
+      else if (added.length === 1) offerUndo(state.bills.find(function (bill) { return bill.id === added[0]; }));
+      else { card.className = 'detect-card'; card.innerHTML = ''; toast('\u8be5\u8d26\u5355\u4f3c\u4e4e\u5df2\u8bb0\u5f55\uff0c\u5df2\u9632\u6b62\u91cd\u590d\u5165\u8d26'); }
+      if (duplicates > 0 && added.length) toast('\u5df2\u8df3\u8fc7 ' + duplicates + ' \u7b14\u91cd\u590d');
     });
     card.querySelector('#dc-batch-clear').addEventListener('click', function () {
       detectPending = [];
@@ -1528,7 +1632,7 @@
   var processedFingerprints = {}; /* 文本指纹 → 时间戳，防止重复记账 */
 
   function clipFingerprint(text) {
-    var s = String(text || '').replace(/\s+/g, '').slice(0, 80);
+    var s = String(text || '').replace(/\s+/g, '');
     var h = 0;
     for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) >>> 0; }
     return h.toString(16) + '_' + s.length;
@@ -1554,11 +1658,12 @@
         if (processedFingerprints[fp] && now - processedFingerprints[fp] < 3600000) return;
         processedFingerprints[fp] = now;
         var res = parseNotify(text);
-        if (!res || res.amount === null) return; /* 非支付通知，忽略 */
+        if (!res || res.amount === null) return;
+        res.fp = clipFingerprint(text);
         if (findDuplicateBill(res)) return;
         var saved = saveParsedBill(res, 'auto');
-        if (!saved) return;
-        toast((res.type === 'income' ? '自动记录收入' : '自动记录支出') + ' ¥' + fmtMoney(res.amount) + ' · ' + (getCat(saved.cat) || { name: '未分类' }).name);
+        if (!saved || saved.fp !== res.fp) return;
+        offerUndo(saved);
       }).catch(function () { /* 权限未授予时静默 */ });
     }, 4000);
   }
@@ -1631,8 +1736,19 @@
       else voiceHint.textContent = '试说：美团25元 · 坐地铁4块 · 收到工资5000 · 咖啡三十';
     }
   }
+  var voiceSilenceTimer = null;
+  var voiceNetRetry = 0;
+  function armVoiceSilence() {
+    if (voiceSilenceTimer) clearTimeout(voiceSilenceTimer);
+    voiceSilenceTimer = setTimeout(function () {
+      if (!voiceListening) return;
+      stopVoice();
+      toast('60秒没有说话，已停止聆听');
+    }, 60000);
+  }
   function stopVoice() {
     voiceListening = false;
+    if (voiceSilenceTimer) { clearTimeout(voiceSilenceTimer); voiceSilenceTimer = null; }
     if (voiceRestartTimer) { clearTimeout(voiceRestartTimer); voiceRestartTimer = null; }
     if (voiceRec) {
       try {
@@ -1684,6 +1800,8 @@
       if (voiceHint && interim) voiceHint.textContent = '🎙️ ' + interim + '…';
       /* 每句最终结果独立回调 → 支持连续多句入账 */
       if (finals.length && voiceOnResult) {
+        voiceNetRetry = 0;
+        armVoiceSilence();
         finals.forEach(function (t) {
           if (voiceHint) voiceHint.textContent = '识别到：「' + t + '」';
           voiceOnResult(t);
@@ -1700,7 +1818,14 @@
         /* 无语音，静默等待下一轮 */
       } else if (e.error === 'aborted') {
         /* 主动停止，忽略 */
-      } else {
+      } else if (e.error === 'network') {
+        voiceNetRetry++;
+        if (voiceHint) voiceHint.textContent = '网络波动，正在重连…';
+        if (voiceNetRetry > 3) {
+          stopVoice();
+          toast('语音网络不稳定，请稍后再试');
+        }
+      } else if (voiceNetRetry === 0) {
         toast('语音识别错误：' + (e.error || '未知'));
       }
     };
@@ -1720,6 +1845,8 @@
         voiceUI(false);
       }
     };
+    voiceNetRetry = 0;
+    armVoiceSilence();
     try { rec.start(); } catch (e) { toast('语音识别启动失败'); }
   }
   /* 页签切换时自动停止语音，释放资源 */
@@ -1770,11 +1897,14 @@
 
     /* 快捷分类：单击打开记账（记住上次分类），长按快速记录 */
     var quickPressTimer = null;
+    var quickLongFired = false;
     $('quick-grid').addEventListener('touchstart', function (e) {
       var el = e.target.closest('.quick-btn');
       if (!el || el.id === 'quick-more') return;
+      quickLongFired = false;
       quickPressTimer = setTimeout(function () {
-        /* 长按：直接快速记录该分类 */
+        quickLongFired = true;
+        setTimeout(function () { quickLongFired = false; }, 700);
         var type = el.getAttribute('data-type');
         var cat = el.getAttribute('data-cat');
         var c = getCat(cat);
@@ -1784,6 +1914,7 @@
     });
     $('quick-grid').addEventListener('touchend', function () { if (quickPressTimer) { clearTimeout(quickPressTimer); quickPressTimer = null; } });
     $('quick-grid').addEventListener('click', function (e) {
+      if (quickLongFired) { quickLongFired = false; return; }
       var el = e.target.closest('.quick-btn');
       if (!el) return;
       if (el.id === 'quick-more') { openSheetAdd(); return; }
@@ -1813,9 +1944,9 @@
     $('btn-smart-parse').addEventListener('click', function () {
       var t = $('in-remark').value;
       if (!t) { toast('请先输入备注或商户名'); return; }
-      var res = parseNotify(t);
-      if (res && res.amount !== null) {
-        var c = autoClassify(res.remark, 'expense');
+      var res = parseText(t);
+      if (res) {
+        var c = autoClassify(res.remark, res.type);
         var note = '识别到金额 ¥' + fmtMoney(res.amount) + (res.remark ? ' · ' + res.remark : '') + (c ? ' · 分类「' + getCat(c).name + '」' : '');
         if (res.type === 'income') { setAddType('income'); }
         if (c) { addCat = c; renderSheetCats(); }
@@ -1839,9 +1970,9 @@
     $('btn-parse-go').addEventListener('click', function () {
       var t = $('in-notify').value.trim();
       if (!t) { toast('请粘贴账单文本'); return; }
-      var res = parseNotify(t);
+      var res = parseText(t);
       var box = $('parse-result-big');
-      if (!res || res.amount === null) {
+      if (!res) {
         box.className = 'parse-result err';
         box.style.display = 'block';
         box.innerHTML = '⚠️ 未能识别有效金额，请检查文本格式';
@@ -1909,11 +2040,13 @@
       } else {
         state.bills.push({ id: uid(), key: makeBillKey({ type: addType, amount: amt, date: date, remark: remark }), type: addType, amount: amt, cat: cat, remark: remark, date: date, source: 'manual' });
       }
-      save();
+      var wasEditing = !!state.editingId;
+      state.editingId = null;
+      saveNow();
       hideSheet('sheet-add');
       renderHome();
       checkBudgetWarn();
-      toast(state.editingId ? '账单已更新' : '已记一笔 ✓');
+      toast(wasEditing ? '账单已更新' : '已记一笔 ✓');
     });
 
     /* 账单点击编辑 / 滑动删除（touch） */
@@ -1923,7 +2056,7 @@
         e.stopPropagation();
         var id = del.getAttribute('data-del');
         state.bills = state.bills.filter(function (b) { return b.id !== id; });
-        save(); renderHome(); toast('已删除');
+        saveNow(); renderHome(); toast('已删除');
         return;
       }
       var item = e.target.closest('.bill-item');
@@ -1976,7 +2109,7 @@
       if (del) {
         var id = del.getAttribute('data-del');
         state.bills = state.bills.filter(function (b) { return b.id !== id; });
-        save(); renderHome(); toast('已删除');
+        saveNow(); renderHome(); toast('已删除');
         return;
       }
       var item = e.target.closest('.bill-item');
@@ -2116,7 +2249,7 @@
       var name = $('rec-name').value.trim() || '周期账单';
       var day = parseInt($('rec-day').value, 10);
       if (isNaN(day) || day < 1 || day > 31) { toast('日期需在 1-31'); return; }
-      state.recurring.push({ id: uid(), type: recType, amount: amt, cat: recCat || defaultCat(recType).id, name: name, day: day });
+      state.recurring.push({ id: uid(), type: recType, amount: amt, cat: recCat || defaultCat(recType).id, name: name, day: day, since: monthStr(curMonth()) });
       save();
       hideSheet('sheet-rec');
       renderAuto();
@@ -2129,9 +2262,7 @@
       if (!del) return;
       var rid = del.getAttribute('data-rdel');
       state.recurring = state.recurring.filter(function (r) { return r.id !== rid; });
-      /* 同时删除该周期已生成的账单 */
-      state.bills = state.bills.filter(function (b) { return b.recurringId !== rid; });
-      save(); renderAuto(); renderHome(); toast('周期账单已删除');
+      saveNow(); renderAuto(); renderHome(); toast('已停止以后自动生成，历史账单保留');
     });
 
     $('btn-add-rule').addEventListener('click', function () {
@@ -2246,7 +2377,11 @@
           state.rules = d.rules || state.rules;
           state.bills = d.bills;
           state.recurring = d.recurring || state.recurring;
-          save(); renderHome(); renderAuto(); renderStats();
+          state.budget = d.budget || 0;
+          state.catBudgets = d.catBudgets || {};
+          state.learned = d.learned || [];
+          buildRuleIndex();
+          saveNow(); renderHome(true); renderAuto(); renderStats();
           toast('数据导入成功 ✓');
         } catch (e) {
           toast('导入失败：文件格式不正确');
@@ -2302,7 +2437,7 @@
         if (btn.getAttribute('data-demo')) { openSheetAdd(); return; }
         var items = $('repeat-row')._items || [];
         var bill = items[parseInt(btn.getAttribute('data-i'), 10)];
-        if (bill) quickRepeatBill(bill);
+        if (bill) showRepeatConfirm(bill);
       });
     }
     if ($('btn-shortcut')) {
@@ -2397,21 +2532,13 @@
 
       if (params.auto === '1' && params.add) {
         /* 直接入账模式（快捷指令"立即记账"） */
-        var r = parseNotify(params.add);
-        if (r && r.amount !== null) {
-          if (!findDuplicateBill(r)) {
-            var saved = saveParsedBill(r, 'shortcut');
-            if (saved) toast('已快捷入账 ¥' + fmtMoney(r.amount) + ' · ' + (getCat(saved.cat) || { name: '未分类' }).name);
-          } else toast('该账单似乎已记录，已防止重复入账');
-        } else {
-          toast('未能识别金额，请检查内容');
-        }
+        bookFromText(params.add, true);
         return;
       }
       if (params.add) {
         /* 文本解析模式：自动识别并弹出确认 */
-        var res = parseNotify(params.add);
-        if (res && res.amount !== null) {
+        var res = parseText(params.add);
+        if (res) {
           showDetectSingle(res);
           /* 滚动到检测卡片并高亮 */
           var dc = $('detect-card');
